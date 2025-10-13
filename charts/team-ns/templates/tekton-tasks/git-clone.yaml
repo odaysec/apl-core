@@ -200,16 +200,52 @@ spec:
         fi
 
         if [ "${WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND}" = "true" ] ; then
-          cp "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/.git-credentials" "${PARAM_USER_HOME}/.git-credentials"
-          cp "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/.gitconfig" "${PARAM_USER_HOME}/.gitconfig"
-          chmod 400 "${PARAM_USER_HOME}/.git-credentials"
-          chmod 400 "${PARAM_USER_HOME}/.gitconfig"
+          # Check if the workspace contains .git-credentials file (Tekton format)
+          if [ -f "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/.git-credentials" ]; then
+            cp "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/.git-credentials" "${PARAM_USER_HOME}/.git-credentials"
+            cp "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/.gitconfig" "${PARAM_USER_HOME}/.gitconfig"
+            chmod 400 "${PARAM_USER_HOME}/.git-credentials"
+            chmod 400 "${PARAM_USER_HOME}/.gitconfig"
+          # Otherwise check if it's a kubernetes.io/basic-auth secret with username/password
+          elif [ -f "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/username" ] && [ -f "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/password" ]; then
+            USERNAME=$(cat "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/username")
+            PASSWORD=$(cat "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/password")
+            # Extract hostname from Git URL
+            HOSTNAME=$(echo "${PARAM_URL}" | sed -E 's|^https?://([^/]+).*|\1|')
+            # Create .git-credentials file
+            echo "https://${USERNAME}:${PASSWORD}@${HOSTNAME}" > "${PARAM_USER_HOME}/.git-credentials"
+            # Create .gitconfig file
+            cat > "${PARAM_USER_HOME}/.gitconfig" <<EOF
+        [credential]
+            helper = store
+        EOF
+            chmod 400 "${PARAM_USER_HOME}/.git-credentials"
+            chmod 400 "${PARAM_USER_HOME}/.gitconfig"
+          fi
         fi
 
         if [ "${WORKSPACE_SSH_DIRECTORY_BOUND}" = "true" ] ; then
-          cp -R "${WORKSPACE_SSH_DIRECTORY_PATH}" "${PARAM_USER_HOME}"/.ssh
-          chmod 700 "${PARAM_USER_HOME}"/.ssh
-          chmod -R 400 "${PARAM_USER_HOME}"/.ssh/*
+          # Check if it's a kubernetes.io/basic-auth secret mounted as ssh-directory
+          if [ -f "${WORKSPACE_SSH_DIRECTORY_PATH}/username" ] && [ -f "${WORKSPACE_SSH_DIRECTORY_PATH}/password" ]; then
+            USERNAME=$(cat "${WORKSPACE_SSH_DIRECTORY_PATH}/username")
+            PASSWORD=$(cat "${WORKSPACE_SSH_DIRECTORY_PATH}/password")
+            # Extract hostname from Git URL
+            HOSTNAME=$(echo "${PARAM_URL}" | sed -E 's|^https?://([^/]+).*|\1|')
+            # Create .git-credentials file
+            echo "https://${USERNAME}:${PASSWORD}@${HOSTNAME}" > "${PARAM_USER_HOME}/.git-credentials"
+            # Create .gitconfig file
+            cat > "${PARAM_USER_HOME}/.gitconfig" <<EOF
+        [credential]
+            helper = store
+        EOF
+            chmod 400 "${PARAM_USER_HOME}/.git-credentials"
+            chmod 400 "${PARAM_USER_HOME}/.gitconfig"
+          else
+            # It's an SSH key
+            cp -R "${WORKSPACE_SSH_DIRECTORY_PATH}" "${PARAM_USER_HOME}"/.ssh
+            chmod 700 "${PARAM_USER_HOME}"/.ssh
+            chmod -R 400 "${PARAM_USER_HOME}"/.ssh/*
+          fi
         fi
 
         if [ "${WORKSPACE_SSL_CA_DIRECTORY_BOUND}" = "true" ] ; then
